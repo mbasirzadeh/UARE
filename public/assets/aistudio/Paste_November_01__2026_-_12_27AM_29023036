@@ -1,0 +1,1599 @@
+# Master Engineering Prompt: Universal Android Runtime Explorer
+
+## 1. Project Overview
+
+Act as a senior Android platform engineer, Android framework researcher, Kotlin architect, and software infrastructure developer.
+
+Design and implement a professional, modular, extensible Android runtime inspection and analysis platform named:
+
+**Universal Android Runtime Explorer (UARE)**
+
+This project must be significantly more capable than a conventional reflection library.
+
+The goal is to build a reusable Android SDK and an accompanying developer tool that can inspect, discover, analyze, monitor, and visualize runtime structures across multiple Android execution environments.
+
+The project must support Android 12 and newer, with an architecture designed to accommodate future Android releases.
+
+This is a real engineering project, not a conceptual prototype.
+
+Prioritize:
+- Correctness
+- Stability
+- Modularity
+- Extensibility
+- Cross-version compatibility
+- Runtime safety
+- Performance
+- Developer experience
+- Accurate capability reporting
+- Reusable public APIs
+
+Never claim that a capability works unless its implementation and required permissions have been verified.
+
+---
+
+# 2. Main Product Vision
+
+Build three complementary products using one shared codebase.
+
+### Product A: Runtime Explorer SDK
+
+A reusable Android library distributed as AAR artifacts.
+
+It must be usable by other Android projects and provide APIs for:
+
+- Runtime environment detection
+- Class discovery
+- ClassLoader discovery
+- DEX inspection
+- Reflection
+- Object inspection
+- Binder inspection
+- System service discovery
+- Runtime monitoring
+- Snapshot generation
+- Runtime comparison
+- Diagnostics
+- Plugin integration
+
+### Product B: Runtime Explorer Studio
+
+A professional Jetpack Compose developer interface.
+
+It must provide:
+
+- Runtime dashboard
+- Class explorer
+- ClassLoader explorer
+- Object explorer
+- Binder explorer
+- System service explorer
+- Reflection workspace
+- Thread monitor
+- Memory monitor
+- Snapshot comparison
+- Plugin manager
+- Query console
+- Export and reporting tools
+
+### Product C: Runtime Explorer Plugin SDK
+
+An extensibility API allowing developers to implement independent plugins.
+
+Plugins must be able to introduce new inspection modules, diagnostic capabilities, visualizations, and platform-specific features without modifying the core engine.
+
+---
+
+# 3. Supported Runtime Environments
+
+The architecture must not be restricted to system_server.
+
+Support the following environments through independent runtime adapters.
+
+## 3.1 Android Application Runtime
+
+Inspect the current application's accessible runtime.
+
+Features:
+- Application environment detection
+- Process information
+- ClassLoader discovery
+- Loaded class inspection where supported
+- Reflection
+- Object registration and inspection
+- Thread monitoring
+- Memory diagnostics
+- Runtime snapshots
+
+## 3.2 Android System Server Runtime
+
+Provide specialized support for execution inside the actual system_server process.
+
+Features:
+- System server environment detection
+- Framework class inspection
+- System service discovery
+- LocalServices discovery where supported
+- Binder-related inspection
+- Runtime object inspection through registered providers
+- ClassLoader analysis
+- Thread and memory diagnostics
+- Platform-specific adapters
+
+The implementation must verify the actual execution environment using multiple signals.
+
+UID 1000 alone must never be treated as proof of system_server execution.
+
+## 3.3 Android System Service Runtime
+
+Support custom and platform service environments.
+
+Distinguish:
+- android.app.Service
+- com.android.server.SystemService
+- Other service implementations
+- Binder service implementations
+
+Do not assume these service types have identical lifecycle or execution characteristics.
+
+## 3.4 Custom Process Runtime
+
+Provide a reusable agent architecture for authorized processes where the SDK is explicitly integrated.
+
+Each process must inspect its own runtime and expose only explicitly permitted information through IPC.
+
+## 3.5 Runtime Capability Detection
+
+Every runtime adapter must expose supported capabilities.
+
+Example:
+
+```kotlin
+data class RuntimeCapabilities(
+    val classDiscovery: Boolean,
+    val dexInspection: Boolean,
+    val classLoaderInspection: Boolean,
+    val reflection: Boolean,
+    val objectInspection: Boolean,
+    val binderInspection: Boolean,
+    val systemServiceDiscovery: Boolean,
+    val threadMonitoring: Boolean,
+    val memoryMonitoring: Boolean,
+    val snapshotSupport: Boolean,
+    val crossProcessInspection: Boolean
+)
+```
+
+Use actual capability detection instead of relying exclusively on Android version checks.
+
+Unsupported features must report a meaningful reason.
+
+---
+
+# 4. Android Version Compatibility
+
+Target Android 12 and newer.
+
+Initial compatibility matrix:
+
+| Android | API |
+|---|---:|
+| Android 12 | 31 |
+| Android 12L | 32 |
+| Android 13 | 33 |
+| Android 14 | 34 |
+| Android 15 | 35 |
+| Android 16 | 36 |
+| Future releases | Capability-based fallback |
+
+Requirements:
+
+1. Maintain stable core interfaces.
+2. Isolate version-dependent platform code.
+3. Implement platform-specific adapters where necessary.
+4. Avoid scattering SDK version checks throughout the core.
+5. Detect capabilities dynamically.
+6. Handle hidden API and internal API restrictions explicitly.
+7. Separate public SDK functionality from AOSP-integrated functionality.
+8. Maintain a compatibility matrix for each feature.
+9. Never assume that an internal framework API has identical behavior across Android releases.
+
+Suggested interface:
+
+```kotlin
+interface AndroidPlatformAdapter {
+
+    val apiLevel: Int
+
+    fun detectEnvironment(): RuntimeEnvironment
+
+    fun discoverClassLoaders(): List<ClassLoaderInfo>
+
+    fun discoverSystemServices(): List<SystemServiceInfo>
+
+    fun discoverLocalServices(): List<SystemServiceInfo>
+
+    fun getPlatformCapabilities(): RuntimeCapabilities
+}
+```
+
+Implement version adapters only when there is a real version-specific implementation requirement.
+
+Do not create empty adapter classes simply to make the architecture look complete.
+
+---
+
+# 5. Project Architecture
+
+Use a modular Gradle architecture.
+
+Suggested structure:
+
+```text
+universal-runtime-explorer/
+│
+├── explorer-api/
+│
+├── explorer-core/
+│   ├── engine/
+│   ├── registry/
+│   ├── capabilities/
+│   ├── configuration/
+│   └── query/
+│
+├── explorer-runtime/
+│   ├── app/
+│   ├── system-server/
+│   ├── system-service/
+│   └── custom/
+│
+├── explorer-discovery/
+│   ├── classes/
+│   ├── dex/
+│   ├── classloaders/
+│   ├── services/
+│   └── objects/
+│
+├── explorer-inspection/
+│   ├── reflection/
+│   ├── fields/
+│   ├── methods/
+│   ├── constructors/
+│   └── object-graph/
+│
+├── explorer-platform/
+│   ├── android-12/
+│   ├── android-13/
+│   ├── android-14/
+│   ├── android-15/
+│   └── android-16/
+│
+├── explorer-binder/
+│
+├── explorer-monitor/
+│   ├── threads/
+│   ├── memory/
+│   ├── runtime/
+│   └── diagnostics/
+│
+├── explorer-snapshot/
+│
+├── explorer-plugin-api/
+│
+├── explorer-export/
+│
+├── explorer-ipc/
+│
+├── explorer-ui/
+│
+├── sample/
+│
+└── documentation/
+```
+
+Architecture requirements:
+
+- Follow clean architecture principles.
+- Use dependency inversion.
+- Avoid unnecessary dependencies between modules.
+- Keep Android platform-specific implementation out of the core.
+- Define stable public interfaces.
+- Use Kotlin-first APIs.
+- Prefer immutable models.
+- Use structured concurrency.
+- Keep long-running inspection operations off the main thread.
+- Make expensive operations cancellable.
+- Provide clear module responsibilities.
+
+Before implementation, produce a module dependency graph and verify that no circular dependencies exist.
+
+---
+
+# 6. Runtime Environment Detection
+
+Create a dedicated runtime detection engine.
+
+It must identify:
+
+- Process name
+- PID
+- UID
+- Application ID where applicable
+- Android version
+- API level
+- Build fingerprint
+- Runtime type
+- Process context
+- Available class loaders
+- Available platform capabilities
+
+Possible runtime types:
+
+```kotlin
+enum class RuntimeType {
+    APPLICATION,
+    SYSTEM_SERVER,
+    SYSTEM_SERVICE,
+    CUSTOM_PROCESS,
+    UNKNOWN
+}
+```
+
+Do not infer the runtime type from one property alone.
+
+Use multiple independent signals and return a confidence level with the detection result.
+
+Example:
+
+```kotlin
+data class RuntimeEnvironment(
+    val processName: String?,
+    val pid: Int,
+    val uid: Int,
+    val apiLevel: Int,
+    val runtimeType: RuntimeType,
+    val confidence: Float,
+    val detectionSignals: List<String>
+)
+```
+
+If the environment cannot be verified, return UNKNOWN.
+
+---
+
+# 7. Class Discovery Engine
+
+Implement a comprehensive class discovery system.
+
+Features:
+
+- Discover accessible loaded classes where supported.
+- Discover class names from accessible DEX files.
+- Distinguish loaded classes from DEX-only class definitions.
+- Search by class name.
+- Search by package.
+- Filter by superclass.
+- Filter by implemented interface.
+- Find classes by annotation.
+- Find classes by method name.
+- Find classes by field type.
+- Find classes by constructor signature.
+- Identify duplicate class names across ClassLoaders.
+- Inspect class modifiers.
+- Inspect inheritance hierarchy.
+- Inspect interfaces.
+- Inspect annotations.
+- Identify synthetic classes.
+- Identify anonymous classes.
+- Support pagination and cancellation.
+
+Important:
+
+DEX discovery does not prove that a class is loaded.
+
+Reflection must not be presented as a universal mechanism for enumerating every loaded class.
+
+Provide separate discovery result types.
+
+```kotlin
+enum class ClassDiscoverySource {
+    LOADED_CLASS,
+    DEX_ENTRY,
+    REFLECTION,
+    PLATFORM_INDEX
+}
+```
+
+---
+
+# 8. ClassLoader Explorer
+
+Build a dedicated ClassLoader inspection module.
+
+Features:
+
+- Discover accessible ClassLoaders.
+- Display parent-child relationships.
+- Display ClassLoader class names.
+- Display ClassLoader identity.
+- Inspect supported path information.
+- Inspect DEX elements where available.
+- Find duplicate classes.
+- Identify class resolution conflicts.
+- Compare ClassLoader structures.
+- Export ClassLoader reports.
+
+Never assume every ClassLoader exposes its internal fields.
+
+Report inaccessible information accurately.
+
+---
+
+# 9. Class Inspector
+
+For any accessible Class object, display:
+
+### Class Information
+- Fully qualified name
+- Package
+- Modifiers
+- Superclass
+- Interfaces
+- Annotations
+- ClassLoader
+- Protection domain where available
+- Code source where available
+
+### Constructors
+- Constructor name
+- Parameter types
+- Modifiers
+- Exception types
+
+### Methods
+- Method name
+- Return type
+- Parameter types
+- Modifiers
+- Declaring class
+- Annotations
+- Bridge and synthetic status
+
+### Fields
+- Field name
+- Field type
+- Modifiers
+- Declaring class
+- Annotations
+- Static or instance status
+
+Support:
+- Inherited member inspection
+- Search and filtering
+- Signature generation
+- Structured output
+- JSON export
+
+---
+
+# 10. Object Explorer
+
+Implement an Object Registry and Object Inspector.
+
+The system must distinguish between:
+
+1. Discovering a class.
+2. Creating a new object.
+3. Obtaining a reference to an existing object.
+4. Registering an existing object for inspection.
+
+These are different operations.
+
+Provide explicit object registration APIs.
+
+```kotlin
+interface ObjectProvider {
+    val id: String
+
+    fun discoverObjects(
+        context: ExplorerContext
+    ): List<ObjectHandle>
+}
+```
+
+Object Registry requirements:
+
+- Assign stable session-scoped Object IDs.
+- Store references safely.
+- Support unregistering objects.
+- Avoid unintended memory leaks.
+- Provide configurable retention policies.
+- Track object origin.
+- Track registration time.
+- Support object lookup.
+
+Object Inspector features:
+
+- Inspect object class.
+- Inspect instance fields.
+- Read accessible field values.
+- Inspect nested objects.
+- Inspect arrays.
+- Inspect collections.
+- Inspect maps.
+- Inspect enums.
+- Display primitive values.
+- Detect circular references.
+- Limit traversal depth.
+- Limit object count.
+- Support object comparison.
+- Export object information.
+
+Object identity must be handled carefully.
+
+Do not claim that the SDK can enumerate the entire ART heap through ordinary reflection.
+
+Only inspect references acquired through supported and explicitly registered providers or other verified mechanisms.
+
+---
+
+# 11. Object Graph Engine
+
+Build a graph engine that visualizes relationships between accessible objects.
+
+Features:
+
+- Reference relationship graph
+- Field relationship graph
+- Inheritance graph
+- Interface graph
+- Configurable traversal depth
+- Circular reference detection
+- Node limits
+- Graph filtering
+- Graph search
+- Graph export
+
+Represent relationships with explicit edge types:
+
+```kotlin
+enum class ObjectRelationType {
+    FIELD_REFERENCE,
+    COLLECTION_ELEMENT,
+    MAP_KEY,
+    MAP_VALUE,
+    INHERITANCE,
+    IMPLEMENTS_INTERFACE
+}
+```
+
+Do not imply that a graph is a complete heap graph.
+
+Show the source and confidence of each relationship.
+
+---
+
+# 12. Advanced Reflection Engine
+
+Build a reusable reflection subsystem.
+
+Features:
+
+### Field Operations
+- Read instance fields.
+- Read static fields.
+- Write fields when permitted.
+- Inspect field modifiers.
+- Inspect field types.
+- Resolve inherited fields.
+- Handle primitive and reference types.
+- Handle arrays.
+- Handle enum values.
+
+### Method Operations
+- Discover methods.
+- Resolve overloads.
+- Invoke methods.
+- Handle static methods.
+- Handle instance methods.
+- Support parameter conversion.
+- Display return values.
+- Capture invocation exceptions.
+- Display stack traces.
+- Support cancellation where feasible.
+
+### Constructor Operations
+- Discover constructors.
+- Resolve parameter signatures.
+- Convert input values.
+- Invoke constructors.
+- Display created object information.
+
+### Type Converter
+
+Implement a central conversion engine supporting:
+
+- String
+- Boolean
+- Byte
+- Short
+- Int
+- Long
+- Float
+- Double
+- Char
+- Primitive arrays
+- Object arrays
+- Enum
+- Class
+- Null
+- Collection types where explicitly supported
+
+### Invocation Safety
+
+Every operation must support:
+
+- Explicit user confirmation.
+- Configurable allowlists.
+- Execution time limits where feasible.
+- Cancellation where feasible.
+- Structured exception reporting.
+- Operation logging.
+- Clear warnings for potentially dangerous methods.
+
+Do not automatically invoke discovered methods.
+
+Do not execute arbitrary methods during class scanning.
+
+Do not assume that every method can be safely interrupted.
+
+---
+
+# 13. Binder Explorer
+
+Create a specialized Binder inspection module.
+
+Features:
+
+- Discover accessible Binder services.
+- Inspect service names.
+- Inspect interface descriptors.
+- Identify Binder proxies and local Binder objects.
+- Inspect liveness.
+- Support pingBinder and isBinderAlive checks.
+- Inspect available interface metadata.
+- Display transaction metadata only where reliably available.
+- Display AIDL interface information where accessible.
+- Inspect service relationships.
+- Provide structured Binder reports.
+
+Clearly distinguish:
+
+- Binder Proxy
+- Binder Stub
+- Binder interface
+- Local implementation
+- ServiceManager registration
+
+Do not claim that a client-side Proxy provides access to the server's implementation object.
+
+Do not assume arbitrary Binder transactions can be decoded without their interface contract.
+
+Never bypass Binder permission checks or SELinux restrictions.
+
+---
+
+# 14. Android System Service Discovery
+
+Implement two independent discovery mechanisms.
+
+### Binder Service Discovery
+
+Use supported ServiceManager access paths where available.
+
+### Local Service Discovery
+
+Provide platform-specific integrations for LocalServices where accessible.
+
+Features:
+
+- Service name
+- Service type
+- Implementation class where accessible
+- Binder descriptor where applicable
+- Source of discovery
+- Availability
+- Discovery timestamp
+- Related interfaces
+- Inspection status
+
+Use explicit platform adapters for internal APIs.
+
+Do not assume that LocalServices is accessible from an ordinary application process.
+
+---
+
+# 15. Runtime Monitoring
+
+Implement a monitoring subsystem.
+
+### Thread Monitor
+
+Features:
+
+- Thread enumeration where permitted
+- Thread name
+- Thread ID
+- Thread state
+- Priority
+- Daemon status
+- Stack snapshots
+- Thread count
+- Thread comparison between snapshots
+
+### Memory Monitor
+
+Features:
+
+- Runtime heap usage
+- Heap maximum
+- Heap allocation metrics where supported
+- GC-related information where available
+- Memory snapshots
+- Memory trend visualization
+
+### Runtime Monitor
+
+Features:
+
+- Runtime information
+- ClassLoader count
+- Process information
+- Available diagnostics
+- Exception information from explicitly integrated sources
+- Monitoring history
+
+### Performance
+
+Features:
+
+- Operation duration
+- Discovery duration
+- Reflection execution duration
+- Monitoring overhead
+- Cancellation statistics
+
+Monitoring must be configurable and must not introduce unacceptable overhead.
+
+Do not block system_server startup or critical framework threads.
+
+---
+
+# 16. Snapshot and Diff Engine
+
+Implement a snapshot subsystem.
+
+Supported snapshot data:
+
+- Runtime environment
+- ClassLoader information
+- Class discovery results
+- Service discovery results
+- Object Registry metadata
+- Selected object field values
+- Thread information
+- Memory information
+- Runtime diagnostics
+
+Snapshot features:
+
+- Create snapshot
+- Save snapshot
+- Load snapshot
+- Compare two snapshots
+- Detect additions
+- Detect removals
+- Detect changed values
+- Display change history
+- Export comparison reports
+
+Important:
+
+Snapshots must be explicit, bounded, and configurable.
+
+Do not automatically traverse an unlimited number of objects.
+
+Do not claim that a structured inspection snapshot is equivalent to a full heap dump.
+
+Use stable identifiers where possible and document identity limitations.
+
+---
+
+# 17. Query Engine
+
+Create a structured query API.
+
+Example:
+
+```kotlin
+explorer.query {
+    classes {
+        packageName startsWith "com.android.server"
+    }
+
+    methods {
+        name contains "start"
+    }
+
+    fields {
+        type == Int::class.java
+    }
+}
+```
+
+Service query:
+
+```kotlin
+explorer.query {
+    services {
+        type == ServiceType.BINDER
+    }
+}
+```
+
+Features:
+
+- Class queries
+- Method queries
+- Field queries
+- Service queries
+- Object queries
+- ClassLoader queries
+- Runtime queries
+- Query result pagination
+- Query cancellation
+- Saved queries
+- Query history
+
+Build a query execution engine with clear validation and structured error reporting.
+
+A textual query language can be introduced later.
+
+---
+
+# 18. Plugin Architecture
+
+Implement a stable plugin API.
+
+Example:
+
+```kotlin
+interface RuntimeExplorerPlugin {
+
+    val id: String
+
+    val name: String
+
+    val version: String
+
+    fun isSupported(
+        environment: RuntimeEnvironment
+    ): Boolean
+
+    fun initialize(
+        context: ExplorerContext
+    )
+
+    fun getActions(): List<ExplorerAction>
+
+    fun release()
+}
+```
+
+Plugin requirements:
+
+- Independent module development
+- Plugin metadata
+- Version compatibility
+- Runtime capability checks
+- Lifecycle management
+- Registration and unregistration
+- Error isolation where feasible
+- Permission declarations
+- Plugin-specific UI integration
+- Plugin diagnostics
+
+Initial example plugins:
+
+1. Binder Plugin
+2. Framework Plugin
+3. ClassLoader Plugin
+4. DEX Plugin
+5. Object Graph Plugin
+6. Thread Plugin
+7. Memory Plugin
+8. Accessibility Inspection Plugin
+9. System Service Plugin
+10. Runtime Diagnostics Plugin
+
+Do not allow plugins to silently bypass the SDK's permission and operation policies.
+
+Untrusted plugins must never receive unrestricted execution privileges.
+
+---
+
+# 19. Multi-Process Architecture
+
+Support authorized multi-process inspection through explicit integration.
+
+Architecture:
+
+```text
+                 Explorer Studio
+                       |
+                 IPC Coordinator
+                       |
+           -------------------------
+           |           |           |
+       Process A   Process B   Process C
+           |           |           |
+       Agent A     Agent B     Agent C
+           |           |           |
+       Local SDK   Local SDK   Local SDK
+```
+
+Each process runs its own runtime agent.
+
+Features:
+
+- Agent registration
+- Process identification
+- IPC communication
+- Capability reporting
+- Inspection requests
+- Snapshot transfer
+- Structured result serialization
+- Connection status
+- Request cancellation
+- Version compatibility
+
+Use Binder/AIDL or another appropriate Android IPC mechanism.
+
+Do not transfer raw Java object references between processes.
+
+Use Object IDs and process-scoped handles.
+
+Do not imply that connecting to one process grants access to another process's private runtime.
+
+---
+
+# 20. Export and Reporting Engine
+
+Support:
+
+- JSON
+- CSV
+- HTML
+- Runtime reports
+- Class reports
+- ClassLoader reports
+- Binder reports
+- Object reports
+- Thread reports
+- Memory reports
+- Snapshot reports
+- Diff reports
+- Diagnostic reports
+
+Requirements:
+
+- Versioned schemas
+- Export metadata
+- Timestamp
+- Runtime information
+- Source information
+- Capability limitations
+- Error information
+
+Export must support large results without loading everything into memory.
+
+---
+
+# 21. Android Version Intelligence
+
+Create a central platform compatibility registry.
+
+For each capability, maintain:
+
+- First known supported Android version
+- Last verified Android version
+- Required environment
+- Required permissions or integration
+- Implementation source
+- Known limitations
+- Verification status
+
+Example:
+
+```kotlin
+data class CapabilityInfo(
+    val id: String,
+    val supported: Boolean,
+    val apiLevel: Int,
+    val environment: RuntimeType,
+    val source: String?,
+    val limitations: List<String>,
+    val verificationStatus: VerificationStatus
+)
+```
+
+Do not use guessed compatibility information.
+
+Keep verified and unverified capabilities separate.
+
+---
+
+# 22. Runtime Explorer Studio UI
+
+Build a professional developer-focused Jetpack Compose interface.
+
+Design requirements:
+
+- Modern developer tooling aesthetic
+- Dark and light themes
+- Responsive layouts
+- Desktop-friendly layouts where supported
+- Navigation rail or navigation drawer
+- Search everywhere
+- Structured detail panels
+- Expandable trees
+- Graph visualizations
+- Tables with sorting and filtering
+- Code-style signature rendering
+- Operation history
+- Error inspection
+- Progress and cancellation controls
+
+Main navigation:
+
+```text
+Dashboard
+│
+├── Runtime
+│   ├── Environment
+│   ├── Capabilities
+│   └── Diagnostics
+│
+├── Discovery
+│   ├── Classes
+│   ├── DEX
+│   ├── ClassLoaders
+│   └── Services
+│
+├── Inspection
+│   ├── Class Inspector
+│   ├── Object Explorer
+│   ├── Object Graph
+│   └── Reflection Studio
+│
+├── Binder
+│   ├── Services
+│   ├── Interfaces
+│   └── Diagnostics
+│
+├── Monitoring
+│   ├── Threads
+│   ├── Memory
+│   └── Runtime
+│
+├── Snapshots
+│
+├── Query Console
+│
+├── Plugins
+│
+└── Settings
+```
+
+UI must not directly access framework internals.
+
+All operations must go through SDK APIs and repositories.
+
+Use ViewModels, Kotlin Coroutines, StateFlow, and a clean UI architecture.
+
+---
+
+# 23. Public SDK API
+
+Design a consistent and developer-friendly public API.
+
+Example:
+
+```kotlin
+RuntimeExplorer.initialize(
+    context = context,
+    config = ExplorerConfig(
+        enableClassDiscovery = true,
+        enableDexInspection = true,
+        enableObjectInspection = true,
+        enableBinderInspection = true,
+        enableMonitoring = true
+    )
+)
+```
+
+Example operations:
+
+```kotlin
+val environment =
+    RuntimeExplorer.getEnvironment()
+
+val capabilities =
+    RuntimeExplorer.getCapabilities()
+
+val classLoaders =
+    RuntimeExplorer.discoverClassLoaders()
+
+val classes =
+    RuntimeExplorer.scanClasses()
+
+val services =
+    RuntimeExplorer.discoverServices()
+
+val result =
+    RuntimeExplorer.inspectClass(
+        "android.app.Activity"
+    )
+
+val objectHandle =
+    RuntimeExplorer.registerObject(
+        id = "activity-manager",
+        instance = targetObject
+    )
+
+val fields =
+    RuntimeExplorer.inspectObject(
+        objectHandle
+    )
+```
+
+Reflection API:
+
+```kotlin
+val result = RuntimeExplorer.invokeMethod(
+    target = objectHandle,
+    methodName = "exampleMethod",
+    arguments = emptyList()
+)
+```
+
+All public APIs must have:
+
+- Kotlin documentation
+- Typed results
+- Structured errors
+- Cancellation support where applicable
+- Clearly documented environment requirements
+
+Avoid exposing internal implementation classes as public API.
+
+---
+
+# 24. Error Handling and Diagnostics
+
+Use structured result types.
+
+Example:
+
+```kotlin
+sealed interface ExplorerResult<out T> {
+
+    data class Success<T>(
+        val value: T
+    ) : ExplorerResult<T>
+
+    data class Failure(
+        val error: ExplorerError
+    ) : ExplorerResult<Nothing>
+}
+```
+
+Error categories should include:
+
+- Unsupported environment
+- Capability unavailable
+- Class not found
+- Class not loaded
+- ClassLoader resolution failure
+- Access denied
+- Reflection failure
+- Invalid arguments
+- Invocation exception
+- Binder failure
+- Timeout
+- Cancellation
+- Resource limit reached
+- Platform incompatibility
+- Internal engine failure
+
+Diagnostics must identify the failed operation and provide actionable information.
+
+Do not silently swallow exceptions.
+
+---
+
+# 25. Stability and Security Requirements
+
+This project operates in potentially sensitive Android runtime environments.
+
+Follow these requirements strictly:
+
+1. Do not bypass SELinux.
+2. Do not bypass Android permission checks.
+3. Do not bypass Binder access controls.
+4. Do not assume UID 1000 provides unrestricted access.
+5. Do not assume hidden APIs are universally accessible.
+6. Do not require root, Shizuku, LSPosed, Xposed, or Frida.
+7. Do not modify framework state automatically.
+8. Do not execute discovered methods automatically.
+9. Do not run expensive scans on the main thread.
+10. Do not block system_server startup.
+11. Use configurable resource limits.
+12. Use cancellation where technically possible.
+13. Make reflection mutations explicit.
+14. Keep operation logs.
+15. Prevent unbounded object graph traversal.
+16. Prevent accidental memory leaks through object references.
+17. Clearly report unsupported functionality.
+18. Treat all external plugin metadata and query inputs as untrusted data.
+19. Avoid collecting unrelated sensitive user data.
+20. Make diagnostic exports configurable and privacy-aware.
+
+The tool is intended for authorized debugging, platform development, runtime diagnostics, and security research.
+
+---
+
+# 26. Testing Strategy
+
+Implement tests at multiple levels.
+
+### Unit Tests
+- Class filtering
+- Type conversion
+- Signature resolution
+- Query evaluation
+- Snapshot comparison
+- Object graph traversal
+- Capability detection logic
+
+### Integration Tests
+- Reflection operations
+- ClassLoader inspection
+- Object registration
+- Binder metadata inspection
+- Thread monitoring
+- Snapshot generation
+
+### Platform Tests
+
+Test on representative Android versions:
+
+- Android 12
+- Android 12L
+- Android 13
+- Android 14
+- Android 15
+- Android 16
+
+Test separately in:
+
+- Ordinary application process
+- Custom service process
+- Authorized system_server integration
+- Other explicitly integrated processes
+
+### Stability Tests
+- Large class discovery
+- Large DEX files
+- Large object graphs
+- Circular references
+- Concurrent requests
+- Cancellation
+- Memory pressure
+- Plugin failure
+- IPC disconnection
+
+Never claim a platform integration test passed unless it was actually executed on that environment.
+
+---
+
+# 27. Build and Dependency Strategy
+
+Use Kotlin and Gradle.
+
+Prefer stable, compatible dependencies.
+
+Recommended technologies:
+
+- Kotlin
+- Android Gradle Plugin
+- Jetpack Compose
+- Kotlin Coroutines
+- StateFlow
+- AndroidX Lifecycle
+- AIDL or Binder IPC where appropriate
+- JUnit
+- AndroidX Test
+
+Avoid unnecessary dependencies.
+
+Keep public SDK dependencies minimal.
+
+Separate Android SDK-compatible modules from AOSP/platform-integrated modules.
+
+Important:
+
+A standard Android AAR built against public SDK APIs cannot automatically gain access to every hidden framework API.
+
+If a feature requires AOSP internal classes or platform build integration, implement it as a separate integration target with explicit build requirements.
+
+Do not silently replace unavailable platform functionality with fake implementations.
+
+---
+
+# 28. Documentation
+
+Create comprehensive documentation.
+
+Required documents:
+
+1. Project Overview
+2. Architecture
+3. Module Responsibilities
+4. Installation
+5. SDK Integration
+6. Runtime Environment Support
+7. Android Version Compatibility
+8. Class Discovery
+9. ClassLoader Inspection
+10. Object Registry
+11. Reflection API
+12. Binder Explorer
+13. Runtime Monitoring
+14. Snapshot and Diff
+15. Query Engine
+16. Plugin Development
+17. Multi-Process Integration
+18. Security and Limitations
+19. Testing Guide
+20. Troubleshooting
+
+Provide runnable examples wherever possible.
+
+---
+
+# 29. Development Workflow
+
+Do not attempt to implement the entire project in one enormous unverified change.
+
+Work incrementally.
+
+## Phase 1: Architecture and Foundation
+
+Implement:
+
+- Gradle project
+- Module structure
+- Core API
+- Runtime environment models
+- Capability models
+- Runtime detection
+- Basic test infrastructure
+
+Deliver:
+- Compilable project
+- Module dependency graph
+- Architecture documentation
+
+## Phase 2: Discovery Engine
+
+Implement:
+
+- ClassLoader discovery
+- Class inspection
+- DEX inspection
+- Class filtering
+- Discovery result models
+
+Deliver:
+- Working discovery APIs
+- Tests
+- Sample usage
+
+## Phase 3: Inspection Engine
+
+Implement:
+
+- Reflection engine
+- Field inspection
+- Method resolution
+- Constructor support
+- Type converter
+- Object Registry
+- Object Inspector
+
+Deliver:
+- Working reflection APIs
+- Error handling
+- Tests
+
+## Phase 4: Android Platform Integration
+
+Implement:
+
+- System Server adapter
+- System service discovery
+- LocalServices integration where supported
+- Binder inspection
+- Version-specific platform integration
+
+Deliver:
+- Platform compatibility documentation
+- Actual integration tests where an appropriate environment exists
+
+## Phase 5: Advanced Analysis
+
+Implement:
+
+- Object Graph
+- Class Relationship Graph
+- Query Engine
+- Snapshot Engine
+- Diff Engine
+
+## Phase 6: Monitoring
+
+Implement:
+
+- Thread Monitor
+- Memory Monitor
+- Runtime Diagnostics
+- Performance measurements
+
+## Phase 7: Extensibility
+
+Implement:
+
+- Plugin API
+- Plugin lifecycle
+- Example plugins
+- Multi-process agent
+- IPC coordinator
+
+## Phase 8: Studio UI
+
+Implement:
+
+- Dashboard
+- Discovery UI
+- Inspector UI
+- Binder UI
+- Monitoring UI
+- Snapshot UI
+- Query Console
+- Plugin Manager
+
+## Phase 9: Release Preparation
+
+Implement:
+
+- Documentation
+- Sample application
+- Integration tests
+- Compatibility reports
+- AAR publishing configuration
+- Versioning
+- Release notes
+
+---
+
+# 30. Mandatory Engineering Rules
+
+Follow these rules throughout development:
+
+- Do not generate fake functionality.
+- Do not create placeholder implementations and describe them as complete.
+- Do not hide unsupported features.
+- Do not claim that all runtime classes can be enumerated.
+- Do not claim that all heap objects can be accessed.
+- Do not assume Binder Proxy equals Binder implementation.
+- Do not assume Android versions have identical framework internals.
+- Do not mix platform integration with core abstractions.
+- Do not introduce unnecessary complexity.
+- Do not create empty modules without a concrete responsibility.
+- Do not add dependencies without justification.
+- Do not use blocking operations on critical threads.
+- Do not sacrifice correctness for feature count.
+- Keep code readable and production-oriented.
+- Document every significant limitation.
+
+For every implemented feature, report:
+
+1. Implementation status
+2. Supported environments
+3. Supported Android versions
+4. Required permissions or integration
+5. Known limitations
+6. Tests executed
+7. Remaining work
+
+Use the following status categories:
+
+- IMPLEMENTED
+- PARTIALLY_IMPLEMENTED
+- PLATFORM_DEPENDENT
+- UNSUPPORTED
+- NOT_TESTED
+
+---
+
+# 31. First Task: Start Building the Real Project
+
+Before writing implementation code:
+
+1. Inspect the available development environment.
+2. Determine the available Android SDK and build tools.
+3. Choose compatible Kotlin and AGP versions.
+4. Finalize module dependencies.
+5. Create the initial Gradle project.
+6. Define core public interfaces.
+7. Implement Runtime Environment Detection.
+8. Implement Capability Detection.
+9. Add unit tests.
+10. Build the project.
+
+Do not start by implementing every advanced feature.
+
+The first milestone must be a clean, compilable, modular foundation.
+
+After completing Phase 1:
+
+- Show the actual project structure.
+- Explain each module.
+- Show the public APIs.
+- Report the build result.
+- Report the tests executed.
+- List limitations and next steps.
+
+Then continue with Phase 2.
+
+If a required tool, platform dependency, or build environment is unavailable, explain the blocker and implement the parts that can genuinely be completed.
+
+---
+
+# 32. Final Product Objective
+
+The final product should be a reusable, extensible Android runtime analysis platform.
+
+It should combine the functionality of:
+
+- Runtime Explorer
+- Class Inspector
+- ClassLoader Analyzer
+- DEX Inspector
+- Object Explorer
+- Reflection Studio
+- Binder Explorer
+- System Service Explorer
+- Thread Monitor
+- Memory Monitor
+- Snapshot and Diff Engine
+- Query Engine
+- Plugin Framework
+- Multi-Process Runtime Dashboard
+
+The core architecture must remain reusable across different Android projects and execution environments.
+
+The result should be suitable for professional Android framework development, authorized runtime debugging, system-level diagnostics, and advanced Android platform research.
+
+**Build a real, testable, modular engineering product. Prioritize a correct foundation and verified capabilities over impressive but unsupported claims.**

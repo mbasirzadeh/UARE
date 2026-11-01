@@ -1,0 +1,1189 @@
+# Master Engineering Prompt
+# Universal Interactive Android Runtime Explorer & Controller
+
+## 1. Project Vision
+
+Design and implement a professional, modular, extensible Android Runtime Exploration and Control Platform.
+
+The project must be delivered as a reusable Android library ecosystem, not merely a standalone debugging application.
+
+Its primary purpose is to give an authorized user a unified interface to inspect, navigate, interact with, and control accessible runtime components of an Android process.
+
+This is NOT just a monitoring or information-gathering tool.
+
+The user must be able to:
+
+- Discover classes, objects, services, Binder interfaces, and runtime components.
+- Navigate through classes and object instances.
+- Inspect fields, properties, methods, constructors, and relationships.
+- Read and modify accessible object fields.
+- Invoke methods and constructors.
+- Explore method parameters and construct their input values interactively.
+- Execute methods using a dedicated Runtime Runner.
+- Inspect execution results, exceptions, and side effects.
+- Navigate from one object to another through references.
+- Explore system services and Binder endpoints.
+- Perform supported runtime operations through one integrated interface.
+
+The overall experience should resemble a combination of:
+
+- Runtime Explorer
+- Object Browser
+- Reflection Inspector
+- Interactive Debugger
+- Binder Explorer
+- Runtime Method Executor
+- System Service Explorer
+- Runtime Control Studio
+
+All these capabilities must be integrated into ONE unified Explorer.
+
+Reflection must NOT be implemented as a separate standalone feature or disconnected screen. It must be the underlying interaction engine of the Explorer.
+
+---
+
+# 2. Dual-Environment Architecture
+
+The platform must support two execution environments.
+
+## Environment A: Application Runtime
+
+A reusable library integrated into an ordinary Android application.
+
+Requirements:
+
+- Discover classes loaded in the host process where supported.
+- Inspect accessible objects registered with the Explorer.
+- Inspect class hierarchies, interfaces, methods, and fields.
+- Navigate object references.
+- Read and modify accessible fields.
+- Invoke accessible methods.
+- Create objects using supported constructors.
+- Explore application services and components.
+- Inspect available Binder proxies and interfaces.
+- Execute methods through the Runtime Runner.
+
+The library must work without requiring a separate desktop application for normal operation.
+
+## Environment B: System Runtime
+
+A dedicated integration that can operate inside an authorized Android platform environment.
+
+Target environments include:
+
+- system_server
+- Android Framework services
+- SystemService implementations
+- LocalServices
+- System process components
+- Other explicitly integrated platform processes
+
+Requirements:
+
+- Discover system runtime classes and instances.
+- Inspect internal Framework objects where access is available.
+- Explore system services.
+- Explore LocalServices registrations.
+- Inspect Binder services and their accessible interfaces.
+- Invoke supported methods on authorized objects.
+- Modify supported fields.
+- Execute controlled operations inside the integrated process.
+- Support platform-specific APIs and internal Android classes.
+
+Important architectural requirement:
+
+Do not assume that an ordinary Android AAR can independently access system_server.
+
+Implement a separate Platform Integration layer using the appropriate AOSP/platform build configuration, permissions, and process integration.
+
+The shared Explorer UI and core engine should communicate with the platform integration through a well-defined provider/agent interface.
+
+## Multi-Process Architecture
+
+The architecture must support multiple runtime agents.
+
+For example:
+
+- Application Process Agent
+- system_server Agent
+- Other authorized Process Agents
+
+Each agent must maintain its own runtime context.
+
+Use stable object identifiers and handles instead of attempting to transfer Java object references between processes.
+
+Communication must use a suitable IPC abstraction.
+
+---
+
+# 3. Core Architectural Modules
+
+Design the following modules as independently testable components.
+
+### 3.1 Runtime Core
+
+Responsibilities:
+
+- Runtime initialization
+- Environment detection
+- Process identification
+- API-level detection
+- Runtime capability detection
+- Runtime session management
+- Agent registration
+- Provider management
+- Lifecycle management
+
+### 3.2 Class Discovery Engine
+
+Discover and organize available class information.
+
+Capabilities:
+
+- Loaded class discovery where supported.
+- ClassLoader discovery.
+- DEX metadata discovery.
+- Package and namespace filtering.
+- Class hierarchy inspection.
+- Interface discovery.
+- Superclass inspection.
+- Annotation inspection.
+- Method metadata.
+- Field metadata.
+- Constructor metadata.
+- Class origin information.
+- ClassLoader association.
+
+Clearly distinguish:
+
+1. Classes discovered in DEX files.
+2. Classes actually loaded by the runtime.
+3. Classes for which an instance is available.
+
+Never represent these three categories as equivalent.
+
+### 3.3 Object Registry
+
+This is one of the most important components.
+
+The Explorer must support discovering, registering, tracking, and inspecting object references obtained through supported providers.
+
+Capabilities:
+
+- Object registration.
+- Object identification.
+- Object metadata.
+- Object type information.
+- Object ownership and process association.
+- Reference navigation.
+- Object relationship tracking.
+- Object lifecycle tracking where possible.
+- Object search.
+- Object filtering.
+- Object grouping.
+- Object history.
+
+Use stable Object IDs or handles.
+
+Do not claim that ordinary Java reflection can enumerate every object in the process heap.
+
+Where deeper heap inspection is available through an authorized JVMTI or platform integration, implement it as an optional capability provider.
+
+### 3.4 Class Inspector
+
+When a class is selected, show:
+
+- Class name.
+- Package.
+- Modifiers.
+- Superclass.
+- Implemented interfaces.
+- ClassLoader.
+- Fields.
+- Methods.
+- Constructors.
+- Annotations.
+- Static members.
+- Instance member definitions.
+- Inheritance hierarchy.
+
+Allow navigation into related classes.
+
+### 3.5 Object Inspector
+
+When an object is selected, display:
+
+- Object ID.
+- Runtime class.
+- Identity information.
+- Object state.
+- Available fields.
+- Current field values.
+- Available methods.
+- Related objects.
+- Reference relationships.
+- Object hierarchy.
+
+The user must be able to expand an object and navigate into its fields and referenced objects.
+
+Example:
+
+Object A
+  ├── field: user
+  │     └── Object B
+  │           ├── name
+  │           ├── age
+  │           └── getProfile()
+  │
+  ├── field: repository
+  │     └── Object C
+  │           ├── database
+  │           └── loadData()
+  │
+  └── refresh()
+
+This navigation must be interactive and recursive.
+
+Support configurable depth limits and cycle detection to prevent infinite object graph traversal.
+
+### 3.6 Reflection Engine
+
+Reflection must be embedded into the Explorer architecture.
+
+It must provide:
+
+- Field discovery.
+- Field reading.
+- Supported field modification.
+- Method discovery.
+- Method invocation.
+- Constructor discovery.
+- Constructor invocation.
+- Method overload resolution.
+- Parameter metadata.
+- Return type information.
+- Exception handling.
+- Static and instance member handling.
+- Inheritance-aware member inspection.
+- Access capability reporting.
+
+Support public APIs and additional authorized integration providers for internal APIs.
+
+Do not silently bypass Android security restrictions.
+
+When an operation is unavailable, explain why and identify the required integration or capability.
+
+---
+
+# 4. Unified Explorer Interface
+
+The most important UI requirement is that all runtime components must be accessible through one unified Explorer.
+
+Do not create separate disconnected pages for Reflection, Objects, Classes, and Services.
+
+Design a unified navigation interface.
+
+## Main Explorer
+
+The main screen should contain a searchable and filterable runtime tree.
+
+Suggested structure:
+
+Runtime Explorer
+│
+├── Classes
+│   ├── Loaded Classes
+│   ├── DEX Classes
+│   └── ClassLoaders
+│
+├── Objects
+│   ├── Registered Objects
+│   ├── Object Groups
+│   └── Object Graph
+│
+├── Services
+│   ├── Android Services
+│   ├── Framework Services
+│   ├── LocalServices
+│   └── Application Services
+│
+├── Binder
+│   ├── Binder Services
+│   ├── Binder Interfaces
+│   ├── Proxies
+│   └── Available Transactions
+│
+├── Threads
+│
+└── Runtime
+
+This is a conceptual organization, not a restriction on the actual implementation.
+
+The user must be able to search across all supported categories.
+
+## Selection Behavior
+
+When the user selects a class:
+
+Display its members and metadata.
+
+When the user selects an object:
+
+Display its fields, values, methods, and related objects.
+
+When the user selects a field:
+
+Display its type, modifiers, current value, and available operations.
+
+When the user selects a method:
+
+Display its signature, parameters, return type, and an option to execute it.
+
+When the user selects a service:
+
+Display its implementation information, interfaces, available objects, Binder associations, and supported operations.
+
+When the user selects a Binder endpoint:
+
+Display its descriptor, available interface information, proxy information, and supported transaction metadata.
+
+The UI must support expanding and collapsing elements without losing the current navigation context.
+
+---
+
+# 5. Interactive Runtime Operations
+
+The Explorer must not be read-only.
+
+It must provide an operation layer that allows the user to interact with supported runtime elements.
+
+## Field Operations
+
+For an accessible field, support:
+
+- Read value.
+- Display value.
+- Edit value.
+- Apply modification.
+- Restore previous value when possible.
+- Display modification result.
+- Show errors.
+
+Support common types:
+
+- String
+- Boolean
+- Byte
+- Short
+- Int
+- Long
+- Float
+- Double
+- Char
+- Enum
+- Primitive arrays
+- Object references
+- Supported collections
+
+For complex objects, provide a navigation option instead of forcing them into primitive input fields.
+
+## Method Operations
+
+For each supported method:
+
+- Show method name.
+- Show complete signature.
+- Show declaring class.
+- Show modifiers.
+- Show parameter types.
+- Show return type.
+- Show exceptions.
+- Identify static or instance method.
+- Resolve available target instances.
+- Provide an execution action.
+
+The user must be able to navigate from the method to its declaring class and related objects.
+
+## Constructor Operations
+
+Allow users to:
+
+- Inspect constructors.
+- Select a constructor.
+- Explore its parameters.
+- Provide input values.
+- Construct an instance when supported.
+- Register the resulting object.
+- Open the created object in the Explorer.
+
+---
+
+# 6. Runtime Runner
+
+This is a critical feature.
+
+Implement a dedicated but integrated execution environment called Runtime Runner.
+
+Its purpose is to allow users to find a runtime method, construct its inputs, and execute it interactively.
+
+The Runner must feel like a combination of a method browser, parameter editor, and execution console.
+
+## Method Selection
+
+Users must be able to:
+
+1. Search for a class.
+2. Select a class.
+3. Explore its methods.
+4. Search for a specific method.
+5. Select the desired overload.
+6. Select a target object if the method is an instance method.
+7. Inspect the complete method signature.
+
+## Parameter Explorer
+
+After selecting a method, automatically generate an input editor based on its parameter metadata.
+
+For example:
+
+Method:
+
+sendMessage(String message, int priority, User user)
+
+The Runner should generate:
+
+message:
+[Enter String]
+
+priority:
+[Enter Integer]
+
+user:
+[Select Existing Object] [Create Object] [Explore]
+
+The user must be able to:
+
+- Enter primitive values.
+- Enter strings.
+- Select enum values.
+- Select existing registered objects.
+- Create supported objects.
+- Navigate through object references.
+- Construct arrays.
+- Construct supported collections.
+- Use null where valid.
+- Reuse previously created input values.
+- Inspect nested parameter types.
+
+For complex parameter types, provide an object browser.
+
+Do not limit the user to manually typing serialized JSON for every parameter.
+
+## Argument Resolution
+
+Implement a robust argument resolver.
+
+It must support:
+
+- Primitive conversion.
+- Boxed primitive conversion.
+- String conversion.
+- Enum resolution.
+- Array creation.
+- Object reference resolution.
+- Null handling.
+- Collection construction where supported.
+- Constructor-based object creation.
+- Overloaded method selection.
+- Type compatibility validation.
+
+Do not select an overloaded method based only on its name.
+
+Use the actual method signature and parameter types.
+
+## Execution
+
+The user should be able to press:
+
+RUN
+
+Before execution, show:
+
+- Target object.
+- Selected method.
+- Parameter values.
+- Resolved parameter types.
+- Expected return type.
+- Execution context.
+- Required capabilities.
+- Any known side-effect warnings.
+
+After execution, show:
+
+- Execution status.
+- Return value.
+- Return value type.
+- Execution duration.
+- Exception details.
+- Stack trace when available.
+- Resulting object reference.
+- Available navigation actions.
+
+If the returned value is an object, automatically provide:
+
+Open in Explorer
+
+If the returned value is a collection, provide:
+
+- Collection size.
+- Element types.
+- Expandable elements.
+- Object navigation.
+
+## Execution History
+
+Store an optional local execution history containing:
+
+- Executed method.
+- Target object ID.
+- Argument summary.
+- Timestamp.
+- Result.
+- Execution status.
+
+Allow users to rerun supported operations.
+
+Sensitive values must not be stored automatically.
+
+## Execution Context
+
+Support explicit execution policies:
+
+- Background execution by default.
+- Configurable execution timeout.
+- Cancellation where technically possible.
+- Main-thread execution only when explicitly required and authorized.
+- Dedicated execution context for expensive operations.
+- Exception isolation and reporting.
+
+Never execute potentially blocking operations on critical system threads.
+
+---
+
+# 7. Binder Explorer
+
+Provide a comprehensive Binder exploration module.
+
+Capabilities:
+
+- Discover accessible Binder services.
+- Inspect service names.
+- Inspect interface descriptors.
+- Identify Binder proxies.
+- Identify available Stub information.
+- Inspect interfaces and methods when metadata is available.
+- Inspect transaction metadata where available.
+- Display Binder liveness information.
+- Inspect death-recipient state where supported.
+- Invoke supported Binder operations through appropriate interfaces.
+- Display transaction results and errors.
+
+Clearly distinguish:
+
+- Binder proxy.
+- Binder Stub.
+- Server-side implementation.
+- Service registration.
+- Transaction metadata.
+
+Do not assume that inspecting a client-side Binder proxy provides access to the server-side implementation object.
+
+Never assume every Binder transaction can be safely or correctly invoked without the correct interface contract and arguments.
+
+---
+
+# 8. Android System Service Explorer
+
+Support different service categories:
+
+- Context-based Android services.
+- Binder system services.
+- Framework SystemService implementations.
+- LocalServices registrations.
+- Application-level services.
+- Custom registered providers.
+
+For each service, display available metadata and supported navigation operations.
+
+For SystemService and LocalServices, use a dedicated platform integration when required.
+
+Do not confuse Android components extending android.app.Service with internal Framework classes extending com.android.server.SystemService.
+
+---
+
+# 9. Object Graph Explorer
+
+Implement a visual and interactive object graph.
+
+Requirements:
+
+- Display object relationships.
+- Show field-to-object references.
+- Navigate between connected objects.
+- Detect cycles.
+- Prevent unlimited recursive traversal.
+- Support graph depth limits.
+- Allow object filtering.
+- Open any graph node in the Object Inspector.
+- Highlight references and shared objects.
+
+Provide both:
+
+1. Tree-based navigation.
+2. Graph-based visualization.
+
+---
+
+# 10. Runtime Monitoring
+
+Provide optional runtime monitoring:
+
+- Memory usage.
+- Heap information where available.
+- Thread information.
+- Thread states.
+- Runtime information.
+- Loaded class statistics where available.
+- Object registration statistics.
+- GC-related information where available.
+- Process information.
+- Runtime performance metrics.
+
+Monitoring must not interfere significantly with the target process.
+
+---
+
+# 11. Snapshot and Diff
+
+Implement runtime snapshots.
+
+Capture supported information about:
+
+- Classes.
+- Class metadata.
+- Registered objects.
+- Object fields.
+- Services.
+- Binder endpoints.
+- Runtime state.
+- Available capabilities.
+
+Provide snapshot comparison.
+
+Show:
+
+- Added elements.
+- Removed elements.
+- Changed values.
+- Changed class metadata.
+- Changed service registrations.
+- Object state changes.
+
+Do not claim complete heap snapshots unless the selected integration genuinely supports them.
+
+---
+
+# 12. Query Engine
+
+Implement a unified search and query engine.
+
+Users must be able to search for:
+
+- Class names.
+- Package names.
+- Object IDs.
+- Object types.
+- Field names.
+- Method names.
+- Method signatures.
+- Service names.
+- Binder descriptors.
+- Runtime components.
+
+Support filters such as:
+
+- Static fields.
+- Instance fields.
+- Public methods.
+- Non-public methods where supported.
+- Constructors.
+- Specific return types.
+- Specific parameter types.
+- Specific packages.
+- Specific processes.
+
+Provide a structured query API that can be extended later.
+
+---
+
+# 13. Plugin and Provider Architecture
+
+The system must be extensible.
+
+Implement a provider architecture for different runtime capabilities.
+
+Suggested providers:
+
+- ReflectionProvider
+- ClassDiscoveryProvider
+- ObjectRegistryProvider
+- HeapInspectionProvider
+- BinderProvider
+- SystemServiceProvider
+- LocalServicesProvider
+- ThreadProvider
+- MemoryProvider
+- RuntimeMetricsProvider
+- PlatformIntegrationProvider
+- ProcessAgentProvider
+
+Each provider must report:
+
+- Available capabilities.
+- Unsupported operations.
+- Required permissions.
+- Runtime compatibility.
+- Integration requirements.
+
+The core Explorer must not depend directly on hidden Android implementation details.
+
+---
+
+# 14. Recommended Project Structure
+
+Use a modular Gradle architecture.
+
+Suggested structure:
+
+universal-runtime-explorer/
+│
+├── explorer-core/
+│   ├── runtime/
+│   ├── session/
+│   ├── capability/
+│   ├── model/
+│   └── provider/
+│
+├── explorer-discovery/
+│   ├── class/
+│   ├── dex/
+│   ├── classloader/
+│   └── metadata/
+│
+├── explorer-reflection/
+│   ├── fields/
+│   ├── methods/
+│   ├── constructors/
+│   └── invocation/
+│
+├── explorer-objects/
+│   ├── registry/
+│   ├── inspector/
+│   ├── graph/
+│   └── references/
+│
+├── explorer-runner/
+│   ├── method-browser/
+│   ├── parameter-editor/
+│   ├── argument-resolver/
+│   ├── execution/
+│   └── history/
+│
+├── explorer-binder/
+│
+├── explorer-services/
+│
+├── explorer-monitor/
+│
+├── explorer-snapshot/
+│
+├── explorer-query/
+│
+├── explorer-ipc/
+│
+├── explorer-plugin-api/
+│
+├── explorer-ui-compose/
+│   ├── main/
+│   ├── explorer/
+│   ├── class-inspector/
+│   ├── object-inspector/
+│   ├── service-inspector/
+│   ├── binder-inspector/
+│   ├── runner/
+│   └── settings/
+│
+├── explorer-android-runtime/
+│
+├── explorer-platform/
+│   ├── system-server/
+│   ├── framework/
+│   └── internal-services/
+│
+├── explorer-sample/
+│
+└── documentation/
+
+This structure is a starting point. Adjust it if a better architecture is justified.
+
+The core library and Compose UI should be independently reusable.
+
+The platform integration must remain separate from the ordinary Android library.
+
+---
+
+# 15. Technology Requirements
+
+Preferred technologies:
+
+- Kotlin.
+- Android Gradle Plugin compatible with the selected Android toolchain.
+- Jetpack Compose.
+- Kotlin Coroutines.
+- Flow.
+- Gradle multi-module architecture.
+- AAR distribution for reusable Android modules.
+- Appropriate IPC mechanisms.
+- Unit and instrumentation testing.
+
+Target Android versions:
+
+- Android 12
+- Android 13
+- Android 14
+- Android 15
+- Android 16
+
+The architecture must be forward-compatible with future Android releases.
+
+Use capability-based detection rather than relying exclusively on SDK version checks.
+
+Do not assume that a capability exists merely because the API level is high enough.
+
+---
+
+# 16. Permissions, Safety, and Runtime Stability
+
+This is a powerful runtime inspection and control system.
+
+It must be designed for authorized applications and platform environments.
+
+Requirements:
+
+- Explicit capability reporting.
+- Clear distinction between supported and unsupported operations.
+- Protection against accidental destructive operations.
+- Confirmation for high-impact method invocations.
+- Operation logging.
+- Configurable restrictions.
+- Execution timeout.
+- Exception handling.
+- Process stability.
+- Safe navigation through cyclic object graphs.
+- No unbounded object traversal.
+- No uncontrolled recursive execution.
+- No execution on critical threads by default.
+
+For field modifications, explain that restoring a previous value is not equivalent to undoing all side effects.
+
+For method execution, warn that methods may modify external state, perform I/O, change system configuration, or trigger irreversible actions.
+
+Do not implement mechanisms to bypass SELinux, Binder authorization, Android permissions, or platform security restrictions.
+
+All elevated operations must rely on legitimate platform integration and explicitly granted capabilities.
+
+---
+
+# 17. API Design
+
+Expose a clean public SDK.
+
+Example conceptual API:
+
+```kotlin
+val explorer = RuntimeExplorer.initialize(
+    context = context,
+    configuration = ExplorerConfiguration(
+        enableClassDiscovery = true,
+        enableObjectRegistry = true,
+        enableReflection = true,
+        enableMethodExecution = true,
+        enableBinderExplorer = true
+    )
+)
+
+explorer.start()
+
+val session = explorer.currentSession()
+
+val classes = session.classes.search("UserManager")
+
+val objects = session.objects.findByType("UserManager")
+
+val objectInspector = session.inspect(objects.first())
+
+val fields = objectInspector.fields()
+
+val methods = objectInspector.methods()
+
+val result = session.runner.execute(
+    target = objects.first(),
+    method = "someMethod",
+    arguments = listOf(/* resolved arguments */)
+)
+```
+
+This is conceptual API design.
+
+Implement the real API according to the final architecture, type system, and provider capabilities.
+
+The public SDK must provide stable interfaces without exposing unnecessary implementation details.
+
+---
+
+# 18. UI/UX Requirements
+
+The UI must be a professional developer-oriented Compose interface.
+
+Important requirements:
+
+- Unified Explorer.
+- Fast global search.
+- Expandable tree navigation.
+- Object detail panels.
+- Class detail panels.
+- Field value editors.
+- Method execution controls.
+- Parameter editors.
+- Runtime Runner.
+- Execution result viewer.
+- Object graph navigation.
+- Service and Binder inspection.
+- Operation history.
+- Capability indicators.
+- Error and exception details.
+
+The interface must prioritize navigation speed and information density.
+
+The user should not need to leave the Explorer to perform a Reflection operation.
+
+Every discoverable object or class should expose its supported operations in context.
+
+Example workflow:
+
+1. Open Explorer.
+2. Search for a class.
+3. Select the class.
+4. Open one of its instances.
+5. Inspect its fields.
+6. Navigate into a referenced object.
+7. Select one of its methods.
+8. Explore method parameters.
+9. Select or construct argument objects.
+10. Press RUN.
+11. Inspect the result.
+12. Open the returned object.
+13. Continue navigating.
+
+This entire workflow must be possible inside the unified interface.
+
+---
+
+# 19. Testing Strategy
+
+Implement tests for:
+
+- Runtime initialization.
+- Environment detection.
+- Class discovery.
+- ClassLoader discovery.
+- Reflection.
+- Field reading.
+- Field modification.
+- Method overload resolution.
+- Method invocation.
+- Constructor invocation.
+- Parameter conversion.
+- Object registration.
+- Object navigation.
+- Object graph cycle detection.
+- Binder metadata.
+- Service discovery.
+- IPC.
+- Runtime Runner.
+- Snapshot comparison.
+- Error handling.
+- Android version compatibility.
+
+Create a sample application containing representative classes, objects, methods, fields, services, and nested object relationships.
+
+Use it to validate the Explorer end-to-end.
+
+For system-level features, create a separate platform integration test environment.
+
+Do not report a feature as implemented or working unless its implementation and tests have actually been completed.
+
+---
+
+# 20. Development Phases
+
+Implement the project incrementally.
+
+Do not attempt to build the entire system in one step.
+
+### Phase 1: Foundation
+
+- Gradle architecture.
+- Core models.
+- Runtime initialization.
+- Environment detection.
+- Capability system.
+- Session management.
+- Compose application shell.
+- Basic unified Explorer UI.
+
+### Phase 2: Class Explorer
+
+- Loaded class discovery.
+- DEX metadata discovery.
+- ClassLoader discovery.
+- Class hierarchy.
+- Class Inspector.
+- Search and filtering.
+
+### Phase 3: Object Explorer
+
+- Object Registry.
+- Object IDs.
+- Object Inspector.
+- Field discovery.
+- Object reference navigation.
+- Object Graph.
+- Cycle detection.
+
+### Phase 4: Integrated Reflection
+
+- Field reading.
+- Field modification.
+- Method discovery.
+- Constructor discovery.
+- Method overload resolution.
+- Invocation engine.
+- Return value inspection.
+
+### Phase 5: Runtime Runner
+
+- Method browser.
+- Parameter discovery.
+- Parameter editor.
+- Argument resolver.
+- Object selection.
+- Object construction.
+- RUN interface.
+- Execution results.
+- Execution history.
+
+### Phase 6: Services and Binder
+
+- Service discovery.
+- Binder Explorer.
+- Interface metadata.
+- Supported transaction inspection.
+- LocalServices integration.
+- Platform-specific service inspection.
+
+### Phase 7: Platform Integration
+
+- Platform module.
+- system_server integration.
+- Framework integration.
+- Internal service providers.
+- Multi-process agent architecture.
+- IPC communication.
+
+### Phase 8: Monitoring and Snapshots
+
+- Runtime monitoring.
+- Memory and thread information.
+- Snapshots.
+- Diff.
+- Query Engine.
+
+### Phase 9: Stabilization and Distribution
+
+- Compatibility testing.
+- Performance optimization.
+- Documentation.
+- Sample applications.
+- AAR packaging.
+- Platform build documentation.
+- Plugin API documentation.
+
+---
+
+# 21. Mandatory Engineering Rules
+
+1. Build a real working project, not just architecture diagrams or pseudocode.
+2. Do not create fake functionality or placeholder implementations presented as completed features.
+3. Do not confuse DEX class discovery with loaded class discovery.
+4. Do not claim full heap visibility unless the selected integration supports it.
+5. Do not assume ordinary AAR integration provides system_server access.
+6. Keep Application Runtime and Platform Runtime integrations separate.
+7. Use capability-based APIs.
+8. Keep Reflection integrated into the Explorer.
+9. Keep the Runtime Runner integrated into the same navigation experience.
+10. Every operation must return a structured result.
+11. Every object must have a process-aware identity.
+12. Avoid blocking critical threads.
+13. Implement error handling at provider boundaries.
+14. Keep the SDK modular and reusable.
+15. Write documentation for every public API.
+16. Provide tests for every core capability.
+17. Maintain compatibility across Android versions through runtime capability detection.
+18. Prioritize a functional end-to-end workflow over implementing many incomplete modules.
+
+---
+
+# 22. First Task: Start Implementation
+
+Begin with Phase 1.
+
+Before writing code:
+
+1. Analyze the architecture.
+2. Identify technical constraints.
+3. Define the module dependencies.
+4. Define the public data models.
+5. Define RuntimeEnvironment and RuntimeCapabilities.
+6. Define RuntimeSession.
+7. Define provider interfaces.
+8. Define the Application Agent and Platform Agent contracts.
+9. Design the unified Compose Explorer navigation.
+10. Present the proposed project structure.
+
+Then implement Phase 1 completely.
+
+At the end of each phase:
+
+- List implemented files.
+- Explain architecture decisions.
+- Provide build instructions.
+- Run available tests.
+- Report actual test results.
+- Identify unsupported capabilities.
+- Explain remaining limitations.
+- Propose the next phase.
+
+Do not silently skip difficult technical requirements.
+
+The final objective is a reusable, extensible Android Runtime Explorer & Controller that provides one unified interface for discovering, navigating, inspecting, and interacting with authorized runtime classes, objects, services, Binder components, and executable methods across application and platform environments.

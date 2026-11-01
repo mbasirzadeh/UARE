@@ -1,0 +1,6 @@
+{
+  "name": "Runtime Explorer",
+  "description": "Professional Android runtime inspection, class discovery, Binder analysis, thread and memory monitoring platform (UARE).",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
