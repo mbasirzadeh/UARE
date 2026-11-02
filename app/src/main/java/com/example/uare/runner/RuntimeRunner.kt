@@ -331,6 +331,128 @@ class RuntimeRunner(
         }
     }
 
+    fun extractBinderParameterSpecs(paramTypeNames: List<String>, paramNames: List<String>): List<ParameterSpec> {
+        val resolvedClasses = paramTypeNames.map { name ->
+            when (name.lowercase()) {
+                "int", "integer" -> Int::class.javaPrimitiveType ?: Int::class.java
+                "boolean", "bool" -> Boolean::class.javaPrimitiveType ?: Boolean::class.java
+                "long" -> Long::class.javaPrimitiveType ?: Long::class.java
+                "float" -> Float::class.javaPrimitiveType ?: Float::class.java
+                "double" -> Double::class.javaPrimitiveType ?: Double::class.java
+                "byte" -> Byte::class.javaPrimitiveType ?: Byte::class.java
+                "short" -> Short::class.javaPrimitiveType ?: Short::class.java
+                "char", "character" -> Char::class.javaPrimitiveType ?: Char::class.java
+                "string" -> String::class.java
+                else -> try {
+                    Class.forName(name)
+                } catch (_: Throwable) {
+                    Any::class.java
+                }
+            }
+        }.toTypedArray()
+        return extractSpecsFromClasses(resolvedClasses, paramNames)
+    }
+
+    fun executeBinderOperation(
+        operation: RuntimeOperation.InvokeBinderOperation,
+        arguments: List<ArgumentInput>
+    ): ExplorerResult<ExecutionRecord> {
+        val start = System.currentTimeMillis()
+        return try {
+            val proxyInstance = operation.proxyHandleId?.let { objectRegistry.getObject(it) }
+
+            val result: Any?
+            if (proxyInstance != null) {
+                val method = proxyInstance.javaClass.methods.firstOrNull {
+                    it.name == operation.operationName && it.parameterTypes.size == operation.parameterTypes.size
+                } ?: return ExplorerResult.Failure(
+                    ExplorerError.of(ExplorerError.ErrorCode.INVOCATION_EXCEPTION, "Binder method '${operation.operationName}' not found on proxy")
+                )
+                method.isAccessible = true
+                val paramTypes = method.parameterTypes
+                val resolvedArgs = mutableListOf<Any?>()
+                val summaryTokens = mutableListOf<String>()
+
+                for (i in paramTypes.indices) {
+                    val input = arguments.getOrNull(i)
+                    val paramType = paramTypes[i]
+                    if (input == null || input.isNull) {
+                        resolvedArgs.add(null)
+                        summaryTokens.add("null")
+                    } else if (input.selectedObjectHandleId != null) {
+                        resolvedArgs.add(objectRegistry.getObject(input.selectedObjectHandleId))
+                        summaryTokens.add("@${input.selectedObjectHandleId}")
+                    } else {
+                        val conv = typeConverter.convertValue(input.rawValue, paramType)
+                        when (conv) {
+                            is ExplorerResult.Success -> {
+                                resolvedArgs.add(conv.value)
+                                summaryTokens.add("'${input.rawValue}'")
+                            }
+                            is ExplorerResult.Failure -> return ExplorerResult.Failure(conv.error)
+                        }
+                    }
+                }
+                result = method.invoke(proxyInstance, *resolvedArgs.toTypedArray())
+            } else {
+                val sm = Class.forName("android.os.ServiceManager")
+                val getService = sm.getMethod("getService", String::class.java)
+                val binder = getService.invoke(null, operation.serviceName) as? android.os.IBinder
+                    ?: return ExplorerResult.Failure(
+                        ExplorerError.of(ExplorerError.ErrorCode.RESOURCE_LIMIT_REACHED, "Service '${operation.serviceName}' not found or restricted")
+                    )
+
+                result = when (operation.operationName) {
+                    "pingBinder" -> binder.pingBinder()
+                    "isBinderAlive" -> binder.isBinderAlive
+                    "getInterfaceDescriptor" -> binder.interfaceDescriptor
+                    else -> "Binder ${binder.interfaceDescriptor} is alive (ping=${binder.pingBinder()})"
+                }
+            }
+
+            val duration = System.currentTimeMillis() - start
+            var returnHandle: ObjectHandle? = null
+            if (result != null && !isPrimitiveOrDirect(result.javaClass)) {
+                returnHandle = objectRegistry.registerObject(
+                    result,
+                    "Result of ${operation.serviceName}#${operation.operationName}()",
+                    retainStrong = true
+                )
+            }
+
+            val record = ExecutionRecord(
+                methodName = operation.title,
+                targetHandleId = operation.proxyHandleId,
+                targetClassName = operation.targetClassName,
+                argumentsSummary = arguments.joinToString { it.rawValue },
+                isSuccess = true,
+                durationMs = duration,
+                resultString = result?.toString() ?: "null (void)",
+                returnObjectHandle = returnHandle
+            )
+            executionHistory.add(0, record)
+            ExplorerResult.Success(record)
+        } catch (e: Throwable) {
+            val duration = System.currentTimeMillis() - start
+            val cause = e.cause ?: e
+            val record = ExecutionRecord(
+                methodName = operation.title,
+                targetHandleId = operation.proxyHandleId,
+                targetClassName = operation.targetClassName,
+                argumentsSummary = arguments.joinToString { it.rawValue },
+                isSuccess = false,
+                durationMs = duration,
+                resultString = "[Binder IPC Exception]",
+                exceptionMessage = "${cause.javaClass.simpleName}: ${cause.message}",
+                stackTrace = cause.stackTrace.take(10).map { it.toString() }
+            )
+            executionHistory.add(0, record)
+            ExplorerResult.Failure(
+                ExplorerError.of(ExplorerError.ErrorCode.INVOCATION_EXCEPTION, "Binder IPC failed: ${cause.message}", cause)
+            )
+        }
+    }
+
     private fun isPrimitiveOrDirect(clazz: Class<*>): Boolean {
         return clazz.isPrimitive ||
                 clazz == java.lang.String::class.java ||
@@ -344,3 +466,4 @@ class RuntimeRunner(
                 clazz.isEnum
     }
 }
+

@@ -71,7 +71,7 @@ object RuntimeExplorer {
     val typeConverter = TypeConverter()
     val reflectionEngine = ReflectionEngine(typeConverter)
     val fieldOperations = FieldOperations(typeConverter)
-    val binderExplorer = BinderExplorer()
+    val binderExplorer = BinderExplorer(objectRegistry)
     val threadMonitor = ThreadMonitor()
     val memoryMonitor = MemoryMonitor()
     val diffEngine = DiffEngine()

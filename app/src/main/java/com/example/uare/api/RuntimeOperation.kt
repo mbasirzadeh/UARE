@@ -44,11 +44,15 @@ sealed interface RuntimeOperation {
     data class InvokeBinderOperation(
         val serviceName: String,
         val descriptor: String?,
-        val operationName: String
+        val operationName: String,
+        val parameterTypes: List<String> = emptyList(),
+        val parameterNames: List<String> = emptyList(),
+        val returnType: String = "void",
+        val proxyHandleId: String? = null
     ) : RuntimeOperation {
         override val targetClassName: String get() = descriptor ?: "android.os.IBinder"
-        override val title: String get() = "$serviceName#$operationName"
-        override val operationType: String get() = "BINDER SERVICE OPERATION"
+        override val title: String get() = "$serviceName#$operationName()"
+        override val operationType: String get() = "BINDER IPC INVOCATION"
     }
 }
 
@@ -62,3 +66,26 @@ data class ExplorerSelectionMode(
     val parameterName: String = "",
     val prompt: String = ""
 )
+
+/**
+ * Navigation target for unlimited recursive exploration in Explorer.
+ */
+sealed interface ExplorationTarget {
+    val title: String
+    val subtitle: String
+
+    data class ClassTarget(
+        val className: String
+    ) : ExplorationTarget {
+        override val title: String get() = className.substringAfterLast('.')
+        override val subtitle: String get() = "Class: $className"
+    }
+
+    data class ObjectTarget(
+        val handle: ObjectHandle
+    ) : ExplorationTarget {
+        override val title: String get() = handle.id
+        override val subtitle: String get() = handle.className.substringAfterLast('.')
+    }
+}
+

@@ -3,10 +3,12 @@ package com.example.uare.ui.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.uare.api.CapabilityInfo
+import com.example.uare.api.ExplorationTarget
 import com.example.uare.api.ExplorerResult
 import com.example.uare.api.ExplorerSelectionMode
 import com.example.uare.api.RuntimeEnvironment
 import com.example.uare.api.RuntimeOperation
+import com.example.uare.binder.BinderMethodInfo
 import com.example.uare.binder.SystemServiceInfo
 import com.example.uare.core.RuntimeExplorer
 import com.example.uare.core.session.RuntimeSession
@@ -62,6 +64,7 @@ data class ActiveRunnerState(
     val constructor: Constructor<*>? = null,
     val parameterSpecs: List<ParameterSpec> = emptyList(),
     val arguments: MutableMap<Int, ArgumentInput> = mutableMapOf(),
+    val availableMethods: List<String> = emptyList(),
     val isConfirmedSafe: Boolean = false,
     val isExecuting: Boolean = false,
     val lastExecutionRecord: ExecutionRecord? = null,
@@ -75,6 +78,9 @@ data class ExplorerUiState(
     val currentTab: ExplorerTab = ExplorerTab.UNIFIED_EXPLORER,
     val selectionMode: ExplorerSelectionMode = ExplorerSelectionMode(),
     val isLoading: Boolean = false,
+    val isSearching: Boolean = false,
+    val explorationStack: List<ExplorationTarget> = emptyList(),
+    val currentExplorationTarget: ExplorationTarget? = null,
     val session: RuntimeSession? = RuntimeExplorer.getSession(),
     val environment: RuntimeEnvironment = RuntimeExplorer.getEnvironment(),
     val memory: MemorySnapshot = RuntimeExplorer.getMemorySnapshot(),
@@ -183,9 +189,17 @@ class ExplorerViewModel : ViewModel() {
 
     fun searchClasses(query: String = _uiState.value.classSearchQuery, pkg: String = _uiState.value.packageFilter) {
         viewModelScope.launch(Dispatchers.IO) {
-            _uiState.update { it.copy(isLoading = true, classSearchQuery = query, packageFilter = pkg) }
+            _uiState.update { it.copy(isSearching = true, classSearchQuery = query, packageFilter = pkg) }
             val classes = RuntimeExplorer.discoverClasses(query, pkg, limit = 200)
-            _uiState.update { it.copy(isLoading = false, discoveredClasses = classes) }
+            _uiState.update { it.copy(isSearching = false, discoveredClasses = classes) }
+        }
+    }
+
+    fun searchGlobal(query: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _uiState.update { it.copy(isSearching = true, classSearchQuery = query) }
+            val classes = RuntimeExplorer.discoverClasses(query, limit = 200)
+            _uiState.update { it.copy(isSearching = false, discoveredClasses = classes) }
         }
     }
 
@@ -221,6 +235,160 @@ class ExplorerViewModel : ViewModel() {
         }
     }
 
+    // ---------------- UNLIMITED NESTED EXPLORATION ----------------
+
+    fun exploreClass(className: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _uiState.update { it.copy(isLoading = true) }
+            when (val res = RuntimeExplorer.inspectClass(className)) {
+                is ExplorerResult.Success -> {
+                    val target = ExplorationTarget.ClassTarget(className)
+                    _uiState.update { state ->
+                        state.copy(
+                            isLoading = false,
+                            activeScreen = ActiveScreen.EXPLORER,
+                            selectedClassDetails = res.value,
+                            selectedObjectHandle = null,
+                            selectedObjectNode = null,
+                            explorationStack = state.explorationStack + target,
+                            currentExplorationTarget = target
+                        )
+                    }
+                }
+                is ExplorerResult.Failure -> {
+                    _uiState.update { it.copy(isLoading = false, statusMessage = "Cannot inspect class: ${res.error.message}") }
+                }
+            }
+        }
+    }
+
+    fun exploreObject(handle: ObjectHandle) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _uiState.update { it.copy(isLoading = true) }
+            when (val res = RuntimeExplorer.inspectObject(handle)) {
+                is ExplorerResult.Success -> {
+                    val target = ExplorationTarget.ObjectTarget(handle)
+                    _uiState.update { state ->
+                        state.copy(
+                            isLoading = false,
+                            activeScreen = ActiveScreen.EXPLORER,
+                            selectedObjectHandle = handle,
+                            selectedObjectNode = res.value,
+                            selectedClassDetails = null,
+                            explorationStack = state.explorationStack + target,
+                            currentExplorationTarget = target
+                        )
+                    }
+                }
+                is ExplorerResult.Failure -> {
+                    _uiState.update { it.copy(isLoading = false, statusMessage = "Cannot inspect object: ${res.error.message}") }
+                }
+            }
+        }
+    }
+
+    fun drillDownField(parentHandle: ObjectHandle, fieldName: String, fieldNode: ObjectInspectionNode) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val existing = _uiState.value.registeredObjects.find { it.id == fieldNode.valueString || it.id == fieldNode.name }
+            if (existing != null) {
+                exploreObject(existing)
+            } else {
+                val parentObj = RuntimeExplorer.objectRegistry.getObject(parentHandle.id)
+                if (parentObj != null) {
+                    try {
+                        val field = parentObj.javaClass.getDeclaredField(fieldName).apply { isAccessible = true }
+                        val value = field.get(parentObj)
+                        if (value != null && !value.javaClass.isPrimitive && value.javaClass != String::class.java) {
+                            val newHandle = RuntimeExplorer.objectRegistry.registerObject(
+                                value,
+                                "${parentHandle.id}.$fieldName (${value.javaClass.simpleName})",
+                                retainStrong = true
+                            )
+                            refreshObjects()
+                            exploreObject(newHandle)
+                            return@launch
+                        }
+                    } catch (_: Throwable) {}
+                }
+                exploreClass(fieldNode.type)
+            }
+        }
+    }
+
+    fun popExploration() {
+        _uiState.update { state ->
+            if (state.explorationStack.size <= 1) {
+                state.copy(
+                    explorationStack = emptyList(),
+                    currentExplorationTarget = null,
+                    selectedClassDetails = null,
+                    selectedObjectHandle = null,
+                    selectedObjectNode = null
+                )
+            } else {
+                val newStack = state.explorationStack.dropLast(1)
+                val newCurrent = newStack.last()
+                state.copy(
+                    explorationStack = newStack,
+                    currentExplorationTarget = newCurrent
+                )
+            }
+        }
+        val current = _uiState.value.currentExplorationTarget
+        when (current) {
+            is ExplorationTarget.ClassTarget -> inspectClass(current.className)
+            is ExplorationTarget.ObjectTarget -> inspectObject(current.handle)
+            null -> {}
+        }
+    }
+
+    fun jumpToExplorationIndex(index: Int) {
+        _uiState.update { state ->
+            if (index < 0 || index >= state.explorationStack.size) {
+                state.copy(
+                    explorationStack = emptyList(),
+                    currentExplorationTarget = null,
+                    selectedClassDetails = null,
+                    selectedObjectHandle = null,
+                    selectedObjectNode = null
+                )
+            } else {
+                val newStack = state.explorationStack.take(index + 1)
+                val newCurrent = newStack.last()
+                state.copy(
+                    explorationStack = newStack,
+                    currentExplorationTarget = newCurrent
+                )
+            }
+        }
+        val current = _uiState.value.currentExplorationTarget
+        when (current) {
+            is ExplorationTarget.ClassTarget -> inspectClass(current.className)
+            is ExplorationTarget.ObjectTarget -> inspectObject(current.handle)
+            null -> {}
+        }
+    }
+
+    fun resetExplorationToRoot() {
+        _uiState.update {
+            it.copy(
+                explorationStack = emptyList(),
+                currentExplorationTarget = null,
+                selectedClassDetails = null,
+                selectedObjectHandle = null,
+                selectedObjectNode = null
+            )
+        }
+    }
+
+    fun openObjectInExplorer(handle: ObjectHandle) {
+        exploreObject(handle)
+    }
+
+    fun openClassInExplorer(className: String) {
+        exploreClass(className)
+    }
+
     // ---------------- CONTEXTUAL "USE" ACTIONS ----------------
 
     fun useMethod(targetHandle: ObjectHandle?, targetClassName: String, methodName: String) {
@@ -229,6 +397,11 @@ class ExplorerViewModel : ViewModel() {
                 val clazz = Class.forName(targetClassName)
                 val method = clazz.methods.firstOrNull { it.name == methodName }
                     ?: clazz.declaredMethods.firstOrNull { it.name == methodName }
+
+                val allMethods = (clazz.methods.map { it.name } + clazz.declaredMethods.map { it.name })
+                    .filter { !it.contains("$") }
+                    .distinct()
+                    .sorted()
 
                 if (method != null) {
                     val specs = RuntimeExplorer.runtimeRunner.extractParameterSpecs(method)
@@ -266,6 +439,7 @@ class ExplorerViewModel : ViewModel() {
                                 method = method,
                                 parameterSpecs = specs,
                                 arguments = initialArgs,
+                                availableMethods = allMethods,
                                 isConfirmedSafe = false
                             )
                         )
@@ -276,6 +450,23 @@ class ExplorerViewModel : ViewModel() {
             } catch (e: Throwable) {
                 _uiState.update { it.copy(statusMessage = "Cannot resolve $targetClassName: ${e.message}") }
             }
+        }
+    }
+
+    fun switchRunnerMethod(newMethodName: String) {
+        val runner = _uiState.value.activeRunner ?: return
+        when (val op = runner.operation) {
+            is RuntimeOperation.InvokeMethod -> {
+                useMethod(op.target, op.targetClassName, newMethodName)
+            }
+            is RuntimeOperation.InvokeBinderOperation -> {
+                val svc = _uiState.value.services.firstOrNull { it.name == op.serviceName }
+                val methodInfo = svc?.methods?.firstOrNull { it.name == newMethodName }
+                if (methodInfo != null) {
+                    useBinderMethod(op.serviceName, op.descriptor, methodInfo, op.proxyHandleId)
+                }
+            }
+            else -> {}
         }
     }
 
@@ -358,21 +549,74 @@ class ExplorerViewModel : ViewModel() {
     }
 
     fun useBinderOperation(serviceName: String, descriptor: String?, operationName: String = "pingBinder") {
+        val svc = _uiState.value.services.firstOrNull { it.name == serviceName }
+        val methodInfo = svc?.methods?.firstOrNull { it.name == operationName }
+            ?: BinderMethodInfo(operationName, "Boolean", emptyList(), emptyList(), "$operationName()")
+
+        useBinderMethod(serviceName, descriptor, methodInfo, svc?.proxyObjectHandleId)
+    }
+
+    fun useBinderMethod(
+        serviceName: String,
+        descriptor: String?,
+        methodInfo: BinderMethodInfo,
+        proxyHandleId: String? = null
+    ) {
         val operation = RuntimeOperation.InvokeBinderOperation(
             serviceName = serviceName,
             descriptor = descriptor,
-            operationName = operationName
+            operationName = methodInfo.name,
+            parameterTypes = methodInfo.parameterTypes,
+            parameterNames = methodInfo.parameterNames,
+            returnType = methodInfo.returnType,
+            proxyHandleId = proxyHandleId
         )
+
+        val specs = RuntimeExplorer.runtimeRunner.extractBinderParameterSpecs(methodInfo.parameterTypes, methodInfo.parameterNames)
+        val initialArgs = mutableMapOf<Int, ArgumentInput>()
+        specs.forEach { spec ->
+            val defaultVal = when {
+                spec.isPrimitive && spec.simpleTypeName.contains("bool", ignoreCase = true) -> "true"
+                spec.isPrimitive -> "0"
+                spec.isString -> ""
+                else -> ""
+            }
+            initialArgs[spec.index] = ArgumentInput(
+                parameterIndex = spec.index,
+                parameterName = spec.name,
+                rawValue = defaultVal,
+                selectedObjectHandleId = if (spec.isObjectReference) _uiState.value.registeredObjects.firstOrNull()?.id else null
+            )
+        }
+
+        val svc = _uiState.value.services.firstOrNull { it.name == serviceName }
+        val otherMethods = svc?.methods?.map { it.name } ?: listOf(methodInfo.name)
+
         _uiState.update {
             it.copy(
                 activeScreen = ActiveScreen.RUNNER,
                 selectionMode = ExplorerSelectionMode(active = false),
                 activeRunner = ActiveRunnerState(
                     operation = operation,
+                    parameterSpecs = specs,
+                    arguments = initialArgs,
+                    availableMethods = otherMethods,
                     isConfirmedSafe = true
                 )
             )
         }
+    }
+
+    fun setReturnedObjectAsRunnerTarget(handle: ObjectHandle) {
+        val clazz = try { Class.forName(handle.className) } catch (_: Throwable) { null }
+        val firstMethod = clazz?.methods?.firstOrNull { it.declaringClass != Any::class.java }?.name ?: "toString"
+        useMethod(handle, handle.className, firstMethod)
+    }
+
+    fun reloadArgumentsFromHistory(record: ExecutionRecord) {
+        val handle = record.targetHandleId?.let { id -> _uiState.value.registeredObjects.find { it.id == id } }
+        val rawMethod = record.methodName.substringAfterLast('#').substringBefore('(')
+        useMethod(handle, record.targetClassName, rawMethod)
     }
 
     // ---------------- BROWSE WORKFLOW ----------------
@@ -386,7 +630,7 @@ class ExplorerViewModel : ViewModel() {
                     targetParameterIndex = paramIndex,
                     expectedTypeName = expectedType,
                     parameterName = paramName,
-                    prompt = "Select an object instance for '$paramName' ($expectedType)"
+                    prompt = "Select an instance of $expectedType for parameter '$paramName'"
                 )
             )
         }
@@ -402,15 +646,14 @@ class ExplorerViewModel : ViewModel() {
     }
 
     fun selectObjectForRunnerParameter(handle: ObjectHandle) {
-        val selMode = _uiState.value.selectionMode
-        val paramIdx = selMode.targetParameterIndex
-
         _uiState.update { state ->
             val runner = state.activeRunner
-            if (runner != null && paramIdx >= 0) {
-                val currentArg = runner.arguments[paramIdx] ?: ArgumentInput(paramIdx, "param$paramIdx")
+            val selMode = state.selectionMode
+            if (runner != null && selMode.active && selMode.targetParameterIndex >= 0) {
                 val updatedArgs = runner.arguments.toMutableMap()
-                updatedArgs[paramIdx] = currentArg.copy(
+                val currentArg = updatedArgs[selMode.targetParameterIndex]
+                    ?: ArgumentInput(selMode.targetParameterIndex, selMode.parameterName)
+                updatedArgs[selMode.targetParameterIndex] = currentArg.copy(
                     selectedObjectHandleId = handle.id,
                     rawValue = "@${handle.id}",
                     isNull = false
@@ -436,6 +679,16 @@ class ExplorerViewModel : ViewModel() {
             val currentArg = runner.arguments[index] ?: ArgumentInput(index, "arg$index")
             val updatedMap = runner.arguments.toMutableMap()
             updatedMap[index] = currentArg.copy(rawValue = rawValue, selectedObjectHandleId = null, isNull = false)
+            state.copy(activeRunner = runner.copy(arguments = updatedMap))
+        }
+    }
+
+    fun setRunnerArgumentNull(index: Int, isNull: Boolean) {
+        _uiState.update { state ->
+            val runner = state.activeRunner ?: return@update state
+            val currentArg = runner.arguments[index] ?: ArgumentInput(index, "arg$index")
+            val updatedMap = runner.arguments.toMutableMap()
+            updatedMap[index] = currentArg.copy(isNull = isNull)
             state.copy(activeRunner = runner.copy(arguments = updatedMap))
         }
     }
@@ -492,7 +745,10 @@ class ExplorerViewModel : ViewModel() {
                         is ExplorerResult.Failure -> {
                             _uiState.update { state ->
                                 val r = state.activeRunner ?: return@update state
-                                state.copy(activeRunner = r.copy(isExecuting = false), statusMessage = res.error.message)
+                                state.copy(
+                                    activeRunner = r.copy(isExecuting = false, lastExecutionRecord = r.lastExecutionRecord),
+                                    statusMessage = res.error.message
+                                )
                             }
                         }
                     }
@@ -521,7 +777,10 @@ class ExplorerViewModel : ViewModel() {
                         is ExplorerResult.Failure -> {
                             _uiState.update { state ->
                                 val r = state.activeRunner ?: return@update state
-                                state.copy(activeRunner = r.copy(isExecuting = false), statusMessage = res.error.message)
+                                state.copy(
+                                    activeRunner = r.copy(isExecuting = false, lastExecutionRecord = r.lastExecutionRecord),
+                                    statusMessage = res.error.message
+                                )
                             }
                         }
                     }
@@ -562,127 +821,39 @@ class ExplorerViewModel : ViewModel() {
                 }
 
                 is RuntimeOperation.InvokeBinderOperation -> {
-                    val start = System.currentTimeMillis()
-                    val sm = Class.forName("android.os.ServiceManager")
-                    val getService = sm.getMethod("getService", String::class.java)
-                    val binder = getService.invoke(null, op.serviceName) as? android.os.IBinder
-
-                    val (success, resultStr) = if (binder != null) {
-                        val ping = binder.pingBinder()
-                        val desc = binder.interfaceDescriptor
-                        Pair(true, "Binder isAlive=${binder.isBinderAlive}, ping=$ping, descriptor=$desc")
-                    } else {
-                        Pair(false, "Service '${op.serviceName}' not found or restricted")
+                    val argsList = runner.parameterSpecs.map { spec ->
+                        runner.arguments[spec.index] ?: ArgumentInput(spec.index, spec.name, isNull = true)
                     }
-
-                    val rec = ExecutionRecord(
-                        methodName = op.title,
-                        targetHandleId = null,
-                        targetClassName = op.targetClassName,
-                        argumentsSummary = op.operationName,
-                        isSuccess = success,
-                        durationMs = System.currentTimeMillis() - start,
-                        resultString = resultStr
-                    )
+                    val res = RuntimeExplorer.runtimeRunner.executeBinderOperation(op, argsList)
                     refreshHistory()
+                    refreshObjects()
 
-                    _uiState.update { state ->
-                        val r = state.activeRunner ?: return@update state
-                        state.copy(
-                            activeRunner = r.copy(isExecuting = false, lastExecutionRecord = rec),
-                            statusMessage = resultStr
-                        )
+                    when (res) {
+                        is ExplorerResult.Success -> {
+                            _uiState.update { state ->
+                                val r = state.activeRunner ?: return@update state
+                                state.copy(
+                                    activeRunner = r.copy(isExecuting = false, lastExecutionRecord = res.value),
+                                    statusMessage = "Binder IPC executed in ${res.value.durationMs}ms -> ${res.value.resultString}"
+                                )
+                            }
+                        }
+                        is ExplorerResult.Failure -> {
+                            _uiState.update { state ->
+                                val r = state.activeRunner ?: return@update state
+                                state.copy(
+                                    activeRunner = r.copy(isExecuting = false, lastExecutionRecord = r.lastExecutionRecord),
+                                    statusMessage = res.error.message
+                                )
+                            }
+                        }
                     }
                 }
             }
         }
     }
 
-    fun openObjectInExplorer(handle: ObjectHandle) {
-        _uiState.update {
-            it.copy(
-                activeScreen = ActiveScreen.EXPLORER,
-                selectionMode = ExplorerSelectionMode(active = false)
-            )
-        }
-        inspectObject(handle)
-    }
-
-    fun selectThread(th: ThreadInfoModel?) {
-        _uiState.update { it.copy(selectedThread = th) }
-    }
-
-    fun triggerGc() {
-        viewModelScope.launch(Dispatchers.IO) {
-            RuntimeExplorer.memoryMonitor.requestGarbageCollection()
-            kotlinx.coroutines.delay(150)
-            refreshTelemetry()
-            _uiState.update { it.copy(statusMessage = "Explicit GC invoked (System.gc())") }
-        }
-    }
-
-    fun takeSnapshot(label: String = "") {
-        viewModelScope.launch(Dispatchers.IO) {
-            val snapshot = RuntimeExplorer.createSnapshot(label.ifEmpty { "Snapshot #${_uiState.value.snapshots.size + 1}" })
-            val updated = _uiState.value.snapshots + snapshot
-            _uiState.update {
-                it.copy(
-                    snapshots = updated,
-                    statusMessage = "Captured Snapshot: ${snapshot.id}"
-                )
-            }
-        }
-    }
-
-    fun compareSnapshots(base: RuntimeSnapshot, target: RuntimeSnapshot) {
-        val diff = RuntimeExplorer.diffSnapshots(base, target)
-        _uiState.update { it.copy(selectedDiff = diff) }
-    }
-
-    fun clearDiff() {
-        _uiState.update { it.copy(selectedDiff = null) }
-    }
-
-    fun registerObjectFromClassName(className: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val clazz = Class.forName(className)
-                val constructor = clazz.getDeclaredConstructor()
-                constructor.isAccessible = true
-                val instance = constructor.newInstance()
-                val handle = RuntimeExplorer.registerObject(instance, "Instance of $className", retainStrong = true)
-                refreshObjects()
-                inspectObject(handle)
-                _uiState.update { it.copy(statusMessage = "Registered new object: ${handle.id}") }
-            } catch (e: Throwable) {
-                _uiState.update { it.copy(statusMessage = "Cannot instantiate $className: ${e.message}") }
-            }
-        }
-    }
-
-    fun executePluginAction(action: ExplorerAction) {
-        viewModelScope.launch(Dispatchers.IO) {
-            _uiState.update { it.copy(isLoading = true) }
-            val output = try {
-                action.execute()
-            } catch (t: Throwable) {
-                "Action execution error: ${t.message}"
-            }
-            _uiState.update { it.copy(isLoading = false, lastActionOutput = output) }
-        }
-    }
-
-    fun executeQuery(field: String, op: QueryPredicate.Operator, value: String, targetType: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val predicate = QueryPredicate(field, op, value)
-            val result = when (targetType) {
-                "Classes" -> RuntimeExplorer.queryEngine.queryClasses(_uiState.value.discoveredClasses, listOf(predicate))
-                "Services" -> RuntimeExplorer.queryEngine.queryServices(_uiState.value.services, listOf(predicate))
-                else -> RuntimeExplorer.queryEngine.queryThreads(_uiState.value.threads, listOf(predicate))
-            }
-            _uiState.update { it.copy(lastQueryResult = result) }
-        }
-    }
+    // ---------------- OTHER TELEMETRY & MANAGEMENT ----------------
 
     fun refreshObjects() {
         val objs = RuntimeExplorer.objectRegistry.getAllHandles()
@@ -694,7 +865,73 @@ class ExplorerViewModel : ViewModel() {
         _uiState.update { it.copy(executionHistory = hist) }
     }
 
-    fun clearStatusMessage() {
+    fun selectThread(thread: ThreadInfoModel?) {
+        _uiState.update { it.copy(selectedThread = thread) }
+    }
+
+    fun triggerGc() {
+        Runtime.getRuntime().gc()
+        refreshTelemetry()
+    }
+
+    fun takeSnapshot(label: String = "Manual Snapshot") = createSnapshot(label)
+
+    fun createSnapshot(label: String = "Manual Snapshot") {
+        viewModelScope.launch(Dispatchers.IO) {
+            val snapshot = RuntimeExplorer.createSnapshot(label)
+            _uiState.update { it.copy(snapshots = it.snapshots + snapshot, statusMessage = "Snapshot '${snapshot.label}' created") }
+        }
+    }
+
+    fun compareSnapshots(base: RuntimeSnapshot, target: RuntimeSnapshot) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val diff = RuntimeExplorer.diffSnapshots(base, target)
+            _uiState.update { it.copy(selectedDiff = diff) }
+        }
+    }
+
+    fun executePluginAction(action: ExplorerAction) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val output = action.execute()
+                _uiState.update { it.copy(lastActionOutput = output, statusMessage = "Action succeeded: ${action.title}") }
+            } catch (e: Throwable) {
+                _uiState.update { it.copy(statusMessage = "Action failed: ${e.message}") }
+            }
+        }
+    }
+
+    fun executeQuery(field: String, operator: QueryPredicate.Operator, value: String, targetType: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val predicate = QueryPredicate(field, operator, value)
+            val res = when (targetType) {
+                "Classes" -> RuntimeExplorer.queryEngine.queryClasses(_uiState.value.discoveredClasses, listOf(predicate))
+                "Services" -> RuntimeExplorer.queryEngine.queryServices(_uiState.value.services, listOf(predicate))
+                else -> RuntimeExplorer.queryEngine.queryThreads(_uiState.value.threads, listOf(predicate))
+            }
+            _uiState.update { it.copy(lastQueryResult = res) }
+        }
+    }
+
+    fun registerObjectFromClassName(className: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val clazz = Class.forName(className)
+                val constructor = clazz.getDeclaredConstructor().apply { isAccessible = true }
+                val instance = constructor.newInstance()
+                val handle = RuntimeExplorer.objectRegistry.registerObject(instance, "Created $className", retainStrong = true)
+                refreshObjects()
+                _uiState.update { it.copy(statusMessage = "Registered new instance ${handle.id}") }
+            } catch (e: Throwable) {
+                _uiState.update { it.copy(statusMessage = "Failed to instantiate $className: ${e.message}") }
+            }
+        }
+    }
+
+    fun clearStatus() {
         _uiState.update { it.copy(statusMessage = null) }
     }
+
+    fun clearStatusMessage() = clearStatus()
 }
+

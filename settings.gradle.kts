@@ -24,4 +24,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "Runtime Explorer"
 
-include(":app")
+include(":app", ":uare")

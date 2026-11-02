@@ -1,4 +1,4 @@
-package com.example
+package com.example.uare
 
 import com.example.uare.api.ExplorerResult
 import com.example.uare.api.RuntimeOperation
@@ -306,4 +306,98 @@ class UareRuntimeExplorerTest {
         assertEquals(1, res.totalFound)
         assertEquals("RenderThread", res.matchedThreadNames.first())
     }
+
+    @Test
+    fun testBinderExplorer_discoveryAndMethods() {
+        val registry = ObjectRegistry()
+        val binderExplorer = com.example.uare.binder.BinderExplorer(registry)
+        val services = binderExplorer.discoverServices()
+
+        assertTrue(services.isNotEmpty())
+        val sampleSvc = services.find { it.name == "uare.runtime.service" }
+        assertNotNull(sampleSvc)
+        assertTrue(sampleSvc!!.isPingable)
+        assertTrue(sampleSvc.methods.isNotEmpty())
+
+        val echoMethod = sampleSvc.methods.find { it.name == "echoMessage" }
+        assertNotNull(echoMethod)
+        assertEquals("String", echoMethod!!.returnType)
+        assertEquals(1, echoMethod.parameterTypes.size)
+        assertEquals("String", echoMethod.parameterTypes.first())
+    }
+
+    @Test
+    fun testRuntimeRunner_binderExecution() {
+        val registry = ObjectRegistry()
+        val typeConverter = TypeConverter()
+        val runner = RuntimeRunner(typeConverter, registry)
+        val binderExplorer = com.example.uare.binder.BinderExplorer(registry)
+        val services = binderExplorer.discoverServices()
+        val sampleSvc = services.first { it.name == "uare.runtime.service" }
+
+        // Test Echo invocation
+        val echoOp = RuntimeOperation.InvokeBinderOperation(
+            serviceName = sampleSvc.name,
+            descriptor = sampleSvc.interfaceDescriptor,
+            operationName = "echoMessage",
+            parameterTypes = listOf("String"),
+            parameterNames = listOf("message"),
+            returnType = "String",
+            proxyHandleId = sampleSvc.proxyObjectHandleId
+        )
+
+        val echoRes = runner.executeBinderOperation(
+            echoOp,
+            listOf(ArgumentInput(0, "message", rawValue = "Hello Binder"))
+        )
+        assertTrue(echoRes is ExplorerResult.Success)
+        val echoRecord = (echoRes as ExplorerResult.Success).value
+        assertTrue(echoRecord.isSuccess)
+        assertTrue(echoRecord.resultString.contains("Hello Binder"))
+
+        // Test Fault invocation (Capturing SecurityException)
+        val faultOp = RuntimeOperation.InvokeBinderOperation(
+            serviceName = sampleSvc.name,
+            descriptor = sampleSvc.interfaceDescriptor,
+            operationName = "triggerSecurityFault",
+            parameterTypes = listOf("String"),
+            parameterNames = listOf("reason"),
+            returnType = "String",
+            proxyHandleId = sampleSvc.proxyObjectHandleId
+        )
+
+        val faultRes = runner.executeBinderOperation(
+            faultOp,
+            listOf(ArgumentInput(0, "reason", rawValue = "Unauthorized"))
+        )
+        assertTrue(faultRes is ExplorerResult.Failure)
+        val history = runner.getHistory()
+        val faultRecord = history.find { it.methodName.contains("triggerSecurityFault") }
+        assertNotNull(faultRecord)
+        assertFalse(faultRecord!!.isSuccess)
+        assertTrue(faultRecord.exceptionMessage?.contains("SecurityException") == true)
+    }
+
+    @Test
+    fun testNestedExploration_stackNavigation() {
+        val vm = ExplorerViewModel()
+        vm.exploreClass("com.example.uare.sample.SampleUserManager")
+        Thread.sleep(150)
+        assertEquals(1, vm.uiState.value.explorationStack.size)
+
+        vm.exploreClass("com.example.uare.sample.SampleUserProfile")
+        Thread.sleep(150)
+        assertEquals(2, vm.uiState.value.explorationStack.size)
+
+        vm.popExploration()
+        Thread.sleep(150)
+        assertEquals(1, vm.uiState.value.explorationStack.size)
+        assertEquals("SampleUserManager", vm.uiState.value.currentExplorationTarget?.title)
+
+        vm.resetExplorationToRoot()
+        Thread.sleep(50)
+        assertEquals(0, vm.uiState.value.explorationStack.size)
+        assertEquals(null, vm.uiState.value.currentExplorationTarget)
+    }
 }
+

@@ -21,7 +21,9 @@ data class ClassDetails(
     val constructors: List<ConstructorDetails>,
     val methods: List<MethodDetails>,
     val fields: List<FieldDetails>
-)
+) {
+    val className: String get() = fullyQualifiedName
+}
 
 data class ConstructorDetails(
     val signature: String,
